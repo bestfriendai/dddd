@@ -15,11 +15,6 @@ from langchain_core.messages import AIMessageChunk, ToolMessage, BaseMessage
 from langgraph.types import Command
 
 from src.config.tools import SELECTED_RAG_PROVIDER
-from src.graph.builder import build_graph_with_memory
-from src.podcast.graph.builder import build_graph as build_podcast_graph
-from src.ppt.graph.builder import build_graph as build_ppt_graph
-from src.prose.graph.builder import build_graph as build_prose_graph
-from src.rag.builder import build_retriever
 from src.rag.retriever import Resource
 from src.server.chat_request import (
     ChatMessage,
@@ -66,17 +61,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-graph = build_graph_with_memory()
+# Initialize graph with error handling
+graph = None
+graph_error = None
+
+def initialize_graph():
+    """Initialize the graph with error handling."""
+    global graph, graph_error
+    try:
+        from src.graph.builder import build_graph_with_memory
+        graph = build_graph_with_memory()
+        logger.info("Graph initialized successfully")
+    except Exception as e:
+        graph_error = str(e)
+        logger.error(f"Failed to initialize graph: {e}")
+        logger.info("Application will start in limited mode")
+
+# Try to initialize graph on startup
+initialize_graph()
 
 
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint for Railway deployment."""
-    return {"status": "healthy", "service": "PrivateSearch API"}
+    status = {
+        "status": "healthy",
+        "service": "PrivateSearch API",
+        "graph_initialized": graph is not None,
+    }
+    if graph_error:
+        status["graph_error"] = graph_error
+        status["note"] = "Running in limited mode - some features may not be available"
+    return status
 
 
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
+    if graph is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service temporarily unavailable. Graph initialization failed: {graph_error}"
+        )
+
     thread_id = request.thread_id
     if thread_id == "__default__":
         thread_id = str(uuid4())
@@ -257,6 +283,7 @@ async def text_to_speech(request: TTSRequest):
 @app.post("/api/podcast/generate")
 async def generate_podcast(request: GeneratePodcastRequest):
     try:
+        from src.podcast.graph.builder import build_graph as build_podcast_graph
         report_content = request.content
         print(report_content)
         workflow = build_podcast_graph()
@@ -271,6 +298,7 @@ async def generate_podcast(request: GeneratePodcastRequest):
 @app.post("/api/ppt/generate")
 async def generate_ppt(request: GeneratePPTRequest):
     try:
+        from src.ppt.graph.builder import build_graph as build_ppt_graph
         report_content = request.content
         print(report_content)
         workflow = build_ppt_graph()
@@ -290,6 +318,7 @@ async def generate_ppt(request: GeneratePPTRequest):
 @app.post("/api/prose/generate")
 async def generate_prose(request: GenerateProseRequest):
     try:
+        from src.prose.graph.builder import build_graph as build_prose_graph
         logger.info(f"Generating prose for prompt: {request.prompt}")
         workflow = build_prose_graph()
         events = workflow.astream(
@@ -358,7 +387,12 @@ async def rag_config():
 @app.get("/api/rag/resources", response_model=RAGResourcesResponse)
 async def rag_resources(request: Annotated[RAGResourceRequest, Query()]):
     """Get the resources of the RAG."""
-    retriever = build_retriever()
-    if retriever:
-        return RAGResourcesResponse(resources=retriever.list_resources(request.query))
-    return RAGResourcesResponse(resources=[])
+    try:
+        from src.rag.builder import build_retriever
+        retriever = build_retriever()
+        if retriever:
+            return RAGResourcesResponse(resources=retriever.list_resources(request.query))
+        return RAGResourcesResponse(resources=[])
+    except Exception as e:
+        logger.exception(f"Error in RAG resources endpoint: {str(e)}")
+        return RAGResourcesResponse(resources=[])
