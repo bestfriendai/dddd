@@ -9,13 +9,13 @@ WORKDIR /app
 COPY uv.lock pyproject.toml ./
 
 # Install dependencies
-RUN uv sync --locked --no-install-project
+RUN uv sync --no-install-project
 
 # Copy the application into the container.
 COPY . /app
 
 # Install the application
-RUN uv sync --locked
+RUN uv sync
 
 EXPOSE 8000
 
