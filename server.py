@@ -68,6 +68,18 @@ if __name__ == "__main__":
 
     try:
         logger.info(f"Starting DeerFlow API server on {args.host}:{args.port}")
+        logger.info(f"Environment: APP_ENV={os.getenv('APP_ENV', 'not set')}")
+        logger.info(f"Port from env: PORT={os.getenv('PORT', 'not set')}")
+        logger.info(f"Python path: {sys.path}")
+
+        # Test import before starting server
+        try:
+            from src.server import app
+            logger.info("Successfully imported FastAPI app")
+        except Exception as import_error:
+            logger.error(f"Failed to import app: {import_error}")
+            raise
+
         uvicorn.run(
             "src.server:app",
             host=args.host,
@@ -77,4 +89,5 @@ if __name__ == "__main__":
         )
     except Exception as e:
         logger.error(f"Failed to start server: {str(e)}")
+        logger.exception("Full traceback:")
         sys.exit(1)

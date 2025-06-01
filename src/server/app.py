@@ -80,6 +80,15 @@ def initialize_graph():
 # Try to initialize graph on startup
 initialize_graph()
 
+# Add startup event for debugging
+@app.on_event("startup")
+async def startup_event():
+    logger.info("FastAPI app startup event triggered")
+    logger.info(f"Graph initialized: {graph is not None}")
+    if graph_error:
+        logger.warning(f"Graph initialization error: {graph_error}")
+    logger.info("FastAPI app is ready to serve requests")
+
 
 @app.get("/api/health")
 async def health_check():
