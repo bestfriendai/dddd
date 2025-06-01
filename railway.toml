@@ -13,3 +13,16 @@ restartPolicyMaxRetries = 10
 PORT = { default = "8000" }
 PYTHONUNBUFFERED = "1"
 UV_SYSTEM_PYTHON = "1"
+
+# Application Configuration
+APP_ENV = { default = "production" }
+DEBUG = { default = "False" }
+AGENT_RECURSION_LIMIT = { default = "30" }
+
+# Search API Configuration (DuckDuckGo as fallback - no API key required)
+SEARCH_API = { default = "duckduckgo" }
+
+# LLM Configuration (will be overridden by user-provided environment variables)
+BASIC_MODEL__BASE_URL = { default = "https://api.openai.com/v1" }
+BASIC_MODEL__MODEL = { default = "gpt-3.5-turbo" }
+BASIC_MODEL__API_KEY = { default = "placeholder" }
