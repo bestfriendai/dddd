@@ -72,7 +72,20 @@ def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
     if "model" not in merged_conf:
         raise ValueError(f"Missing model for LLM type: {llm_type}")
 
-    return ChatOpenAI(**merged_conf)
+    # Map configuration keys to ChatOpenAI parameter names
+    chatgpt_params = {}
+    for key, value in merged_conf.items():
+        if key == "base_url":
+            # ChatOpenAI expects openai_api_base instead of base_url
+            chatgpt_params["openai_api_base"] = value
+        else:
+            chatgpt_params[key] = value
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Creating ChatOpenAI with parameters: {list(chatgpt_params.keys())}")
+
+    return ChatOpenAI(**chatgpt_params)
 
 
 def get_llm_by_type(
@@ -114,7 +127,17 @@ def get_llm_by_type(
             env_conf = _get_env_llm_conf(llm_type)
             if env_conf:
                 logger.info(f"Found environment config: {list(env_conf.keys())}")
-                llm = ChatOpenAI(**env_conf)
+
+                # Apply the same parameter mapping as in _create_llm_use_conf
+                chatgpt_params = {}
+                for key, value in env_conf.items():
+                    if key == "base_url":
+                        chatgpt_params["openai_api_base"] = value
+                    else:
+                        chatgpt_params[key] = value
+
+                logger.info(f"Creating ChatOpenAI with fallback parameters: {list(chatgpt_params.keys())}")
+                llm = ChatOpenAI(**chatgpt_params)
                 _llm_cache[llm_type] = llm
                 logger.info(f"Successfully created LLM using environment variables for {llm_type}")
                 return llm
