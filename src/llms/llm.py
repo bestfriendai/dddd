@@ -17,15 +17,25 @@ _llm_cache: dict[LLMType, ChatOpenAI] = {}
 def _get_env_llm_conf(llm_type: str) -> Dict[str, Any]:
     """
     Get LLM configuration from environment variables.
-    Environment variables should follow the format: {LLM_TYPE}__{KEY}
-    e.g., BASIC_MODEL__api_key, BASIC_MODEL__base_url
+    Environment variables should follow the format: {LLM_TYPE}_MODEL__{KEY}
+    e.g., BASIC_MODEL__API_KEY, BASIC_MODEL__BASE_URL, BASIC_MODEL__MODEL
     """
     prefix = f"{llm_type.upper()}_MODEL__"
     conf = {}
+
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Log all environment variables that match our pattern for debugging
+    matching_vars = {k: v for k, v in os.environ.items() if k.startswith(prefix)}
+    logger.info(f"Found environment variables for {llm_type}: {list(matching_vars.keys())}")
+
     for key, value in os.environ.items():
         if key.startswith(prefix):
-            conf_key = key[len(prefix) :].lower()
+            conf_key = key[len(prefix):].lower()
             conf[conf_key] = value
+            logger.info(f"Mapped {key} -> {conf_key} = {value[:10]}...")
+
     return conf
 
 
@@ -74,24 +84,45 @@ def get_llm_by_type(
     if llm_type in _llm_cache:
         return _llm_cache[llm_type]
 
+    import logging
+    logger = logging.getLogger(__name__)
+
     try:
+        # Try to load configuration from YAML file
         conf_path = str((Path(__file__).parent.parent.parent / "conf.yaml").resolve())
         conf = load_yaml_config(conf_path)
 
         # Debug logging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.debug(f"Loading LLM config for type: {llm_type}")
-        logger.debug(f"Config file path: {conf_path}")
-        logger.debug(f"Available config keys: {list(conf.keys())}")
+        logger.info(f"Loading LLM config for type: {llm_type}")
+        logger.info(f"Config file path: {conf_path}")
+        logger.info(f"Config file exists: {os.path.exists(conf_path)}")
+        logger.info(f"Available config keys: {list(conf.keys())}")
+
+        # Also log environment variables for debugging
+        env_conf = _get_env_llm_conf(llm_type)
+        logger.info(f"Environment config for {llm_type}: {list(env_conf.keys())}")
 
         llm = _create_llm_use_conf(llm_type, conf)
         _llm_cache[llm_type] = llm
         return llm
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to create LLM for type {llm_type}: {e}")
+
+        # Try to create LLM using only environment variables as fallback
+        try:
+            logger.info(f"Attempting fallback: creating LLM using only environment variables for {llm_type}")
+            env_conf = _get_env_llm_conf(llm_type)
+            if env_conf:
+                logger.info(f"Found environment config: {list(env_conf.keys())}")
+                llm = ChatOpenAI(**env_conf)
+                _llm_cache[llm_type] = llm
+                logger.info(f"Successfully created LLM using environment variables for {llm_type}")
+                return llm
+            else:
+                logger.error(f"No environment configuration found for {llm_type}")
+        except Exception as fallback_error:
+            logger.error(f"Fallback also failed for {llm_type}: {fallback_error}")
+
         raise
 
 
