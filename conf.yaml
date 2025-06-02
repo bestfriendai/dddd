@@ -1,0 +1,17 @@
+# Configuration for DeerFlow with OpenRouter integration
+# Environment variables will override these settings
+
+BASIC_MODEL:
+  base_url: "https://openrouter.ai/api/v1"
+  model: "deepseek/deepseek-r1-0528:free"
+  api_key: "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"
+
+REASONING_MODEL:
+  base_url: "https://openrouter.ai/api/v1"
+  model: "deepseek/deepseek-r1-0528:free"
+  api_key: "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"
+
+VISION_MODEL:
+  base_url: "https://openrouter.ai/api/v1"
+  model: "deepseek/deepseek-r1-0528:free"
+  api_key: "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"

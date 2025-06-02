@@ -17,7 +17,7 @@ venv/
 .env
 
 # user conf
-conf.yaml
+# conf.yaml  # Commented out - we need this file in production
 
 .idea/
 .langgraph_api/
