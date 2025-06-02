@@ -30,14 +30,22 @@ def _get_env_llm_conf(llm_type: str) -> Dict[str, Any]:
 
 
 def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
+    # Map LLM types to configuration keys
     llm_type_map = {
-        "reasoning": conf.get("REASONING_MODEL", {}),
-        "basic": conf.get("BASIC_MODEL", {}),
-        "vision": conf.get("VISION_MODEL", {}),
+        "reasoning": "REASONING_MODEL",
+        "basic": "BASIC_MODEL",
+        "vision": "VISION_MODEL",
     }
-    llm_conf = llm_type_map.get(llm_type)
+
+    config_key = llm_type_map.get(llm_type)
+    if not config_key:
+        raise ValueError(f"Unknown LLM type: {llm_type}")
+
+    # Get configuration from YAML file
+    llm_conf = conf.get(config_key, {})
     if not isinstance(llm_conf, dict):
-        raise ValueError(f"Invalid LLM Conf: {llm_type}")
+        llm_conf = {}
+
     # Get configuration from environment variables
     env_conf = _get_env_llm_conf(llm_type)
 
@@ -45,7 +53,14 @@ def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
     merged_conf = {**llm_conf, **env_conf}
 
     if not merged_conf:
-        raise ValueError(f"Unknown LLM Conf: {llm_type}")
+        raise ValueError(f"No configuration found for LLM type: {llm_type}")
+
+    # Ensure required parameters are present
+    if "api_key" not in merged_conf:
+        raise ValueError(f"Missing api_key for LLM type: {llm_type}")
+
+    if "model" not in merged_conf:
+        raise ValueError(f"Missing model for LLM type: {llm_type}")
 
     return ChatOpenAI(**merged_conf)
 
@@ -59,12 +74,25 @@ def get_llm_by_type(
     if llm_type in _llm_cache:
         return _llm_cache[llm_type]
 
-    conf = load_yaml_config(
-        str((Path(__file__).parent.parent.parent / "conf.yaml").resolve())
-    )
-    llm = _create_llm_use_conf(llm_type, conf)
-    _llm_cache[llm_type] = llm
-    return llm
+    try:
+        conf_path = str((Path(__file__).parent.parent.parent / "conf.yaml").resolve())
+        conf = load_yaml_config(conf_path)
+
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Loading LLM config for type: {llm_type}")
+        logger.debug(f"Config file path: {conf_path}")
+        logger.debug(f"Available config keys: {list(conf.keys())}")
+
+        llm = _create_llm_use_conf(llm_type, conf)
+        _llm_cache[llm_type] = llm
+        return llm
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to create LLM for type {llm_type}: {e}")
+        raise
 
 
 # In the future, we will use reasoning_llm and vl_llm for different purposes
