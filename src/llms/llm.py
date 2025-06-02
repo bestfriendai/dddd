@@ -26,9 +26,25 @@ def _get_env_llm_conf(llm_type: str) -> Dict[str, Any]:
     import logging
     logger = logging.getLogger(__name__)
 
+    # Debug: Log ALL environment variables to see what's available
+    all_env_vars = list(os.environ.keys())
+    logger.info(f"All environment variables: {all_env_vars}")
+
     # Log all environment variables that match our pattern for debugging
     matching_vars = {k: v for k, v in os.environ.items() if k.startswith(prefix)}
     logger.info(f"Found environment variables for {llm_type}: {list(matching_vars.keys())}")
+
+    # Also check for variations in case there's a naming issue
+    alt_patterns = [
+        f"{llm_type.upper()}_MODEL_",  # Single underscore
+        f"{llm_type.lower()}_model__",  # Lowercase
+        f"{llm_type.upper()}__",       # No MODEL part
+    ]
+
+    for pattern in alt_patterns:
+        alt_matching = {k: v for k, v in os.environ.items() if k.startswith(pattern)}
+        if alt_matching:
+            logger.info(f"Found alternative pattern {pattern}: {list(alt_matching.keys())}")
 
     for key, value in os.environ.items():
         if key.startswith(prefix):
