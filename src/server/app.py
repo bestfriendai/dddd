@@ -115,19 +115,52 @@ async def chat_stream(request: ChatRequest):
     thread_id = request.thread_id
     if thread_id == "__default__":
         thread_id = str(uuid4())
+
+    # Add timeout wrapper for the streaming response
+    import asyncio
+
+    async def timeout_wrapper():
+        # Get timeout from environment or use default (30 minutes)
+        timeout_seconds = int(os.getenv("STREAM_TIMEOUT_SECONDS", "1800"))  # 30 minutes default
+
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                async for chunk in _astream_workflow_generator(
+                    request.model_dump()["messages"],
+                    thread_id,
+                    request.resources,
+                    request.max_plan_iterations,
+                    request.max_step_num,
+                    request.max_search_results,
+                    request.auto_accepted_plan,
+                    request.interrupt_feedback,
+                    request.mcp_settings,
+                    request.enable_background_investigation,
+                ):
+                    yield chunk
+        except asyncio.TimeoutError:
+            logger.warning(f"Stream timeout for thread {thread_id} after {timeout_seconds} seconds")
+            yield _make_event(
+                "error",
+                {
+                    "thread_id": thread_id,
+                    "error": f"Request timeout after {timeout_seconds} seconds",
+                    "role": "assistant",
+                },
+            )
+        except Exception as e:
+            logger.exception(f"Error in timeout wrapper for thread {thread_id}: {e}")
+            yield _make_event(
+                "error",
+                {
+                    "thread_id": thread_id,
+                    "error": f"Stream error: {str(e)}",
+                    "role": "assistant",
+                },
+            )
+
     return StreamingResponse(
-        _astream_workflow_generator(
-            request.model_dump()["messages"],
-            thread_id,
-            request.resources,
-            request.max_plan_iterations,
-            request.max_step_num,
-            request.max_search_results,
-            request.auto_accepted_plan,
-            request.interrupt_feedback,
-            request.mcp_settings,
-            request.enable_background_investigation,
-        ),
+        timeout_wrapper(),
         media_type="text/event-stream",
     )
 
@@ -144,6 +177,8 @@ async def _astream_workflow_generator(
     mcp_settings: dict,
     enable_background_investigation,
 ):
+    import asyncio
+
     input_ = {
         "messages": messages,
         "plan_iterations": 0,
@@ -159,72 +194,111 @@ async def _astream_workflow_generator(
         if messages:
             resume_msg += f" {messages[-1]['content']}"
         input_ = Command(resume=resume_msg)
-    async for agent, _, event_data in graph.astream(
-        input_,
-        config={
-            "thread_id": thread_id,
-            "resources": resources,
-            "max_plan_iterations": max_plan_iterations,
-            "max_step_num": max_step_num,
-            "max_search_results": max_search_results,
-            "mcp_settings": mcp_settings,
-        },
-        stream_mode=["messages", "updates"],
-        subgraphs=True,
-    ):
-        if isinstance(event_data, dict):
-            if "__interrupt__" in event_data:
+
+    try:
+        async for agent, _, event_data in graph.astream(
+            input_,
+            config={
+                "thread_id": thread_id,
+                "resources": resources,
+                "max_plan_iterations": max_plan_iterations,
+                "max_step_num": max_step_num,
+                "max_search_results": max_search_results,
+                "mcp_settings": mcp_settings,
+            },
+            stream_mode=["messages", "updates"],
+            subgraphs=True,
+        ):
+            try:
+                if isinstance(event_data, dict):
+                    if "__interrupt__" in event_data:
+                        yield _make_event(
+                            "interrupt",
+                            {
+                                "thread_id": thread_id,
+                                "id": event_data["__interrupt__"][0].ns[0],
+                                "role": "assistant",
+                                "content": event_data["__interrupt__"][0].value,
+                                "finish_reason": "interrupt",
+                                "options": [
+                                    {"text": "Edit plan", "value": "edit_plan"},
+                                    {"text": "Start research", "value": "accepted"},
+                                ],
+                            },
+                        )
+                    continue
+                message_chunk, message_metadata = cast(
+                    tuple[BaseMessage, dict[str, any]], event_data
+                )
+                event_stream_message: dict[str, any] = {
+                    "thread_id": thread_id,
+                    "agent": agent[0].split(":")[0],
+                    "id": message_chunk.id,
+                    "role": "assistant",
+                    "content": message_chunk.content,
+                }
+                if message_chunk.response_metadata.get("finish_reason"):
+                    event_stream_message["finish_reason"] = message_chunk.response_metadata.get(
+                        "finish_reason"
+                    )
+                if isinstance(message_chunk, ToolMessage):
+                    # Tool Message - Return the result of the tool call
+                    event_stream_message["tool_call_id"] = message_chunk.tool_call_id
+                    yield _make_event("tool_call_result", event_stream_message)
+                elif isinstance(message_chunk, AIMessageChunk):
+                    # AI Message - Raw message tokens
+                    if message_chunk.tool_calls:
+                        # AI Message - Tool Call
+                        event_stream_message["tool_calls"] = message_chunk.tool_calls
+                        event_stream_message["tool_call_chunks"] = (
+                            message_chunk.tool_call_chunks
+                        )
+                        yield _make_event("tool_calls", event_stream_message)
+                    elif message_chunk.tool_call_chunks:
+                        # AI Message - Tool Call Chunks
+                        event_stream_message["tool_call_chunks"] = (
+                            message_chunk.tool_call_chunks
+                        )
+                        yield _make_event("tool_call_chunks", event_stream_message)
+                    else:
+                        # AI Message - Raw message tokens
+                        yield _make_event("message_chunk", event_stream_message)
+            except asyncio.CancelledError:
+                logger.info(f"Stream cancelled for thread {thread_id}")
+                # Clean up and re-raise to properly handle cancellation
+                raise
+            except Exception as e:
+                logger.error(f"Error processing event in stream for thread {thread_id}: {e}")
+                # Send error event to client
                 yield _make_event(
-                    "interrupt",
+                    "error",
                     {
                         "thread_id": thread_id,
-                        "id": event_data["__interrupt__"][0].ns[0],
+                        "error": str(e),
                         "role": "assistant",
-                        "content": event_data["__interrupt__"][0].value,
-                        "finish_reason": "interrupt",
-                        "options": [
-                            {"text": "Edit plan", "value": "edit_plan"},
-                            {"text": "Start research", "value": "accepted"},
-                        ],
                     },
                 )
-            continue
-        message_chunk, message_metadata = cast(
-            tuple[BaseMessage, dict[str, any]], event_data
-        )
-        event_stream_message: dict[str, any] = {
-            "thread_id": thread_id,
-            "agent": agent[0].split(":")[0],
-            "id": message_chunk.id,
-            "role": "assistant",
-            "content": message_chunk.content,
-        }
-        if message_chunk.response_metadata.get("finish_reason"):
-            event_stream_message["finish_reason"] = message_chunk.response_metadata.get(
-                "finish_reason"
+                break
+    except asyncio.CancelledError:
+        logger.info(f"Workflow stream cancelled for thread {thread_id}")
+        # Don't re-raise here as it's expected when client disconnects
+        return
+    except Exception as e:
+        logger.exception(f"Unexpected error in workflow stream for thread {thread_id}: {e}")
+        # Send final error event
+        try:
+            yield _make_event(
+                "error",
+                {
+                    "thread_id": thread_id,
+                    "error": f"Workflow error: {str(e)}",
+                    "role": "assistant",
+                },
             )
-        if isinstance(message_chunk, ToolMessage):
-            # Tool Message - Return the result of the tool call
-            event_stream_message["tool_call_id"] = message_chunk.tool_call_id
-            yield _make_event("tool_call_result", event_stream_message)
-        elif isinstance(message_chunk, AIMessageChunk):
-            # AI Message - Raw message tokens
-            if message_chunk.tool_calls:
-                # AI Message - Tool Call
-                event_stream_message["tool_calls"] = message_chunk.tool_calls
-                event_stream_message["tool_call_chunks"] = (
-                    message_chunk.tool_call_chunks
-                )
-                yield _make_event("tool_calls", event_stream_message)
-            elif message_chunk.tool_call_chunks:
-                # AI Message - Tool Call Chunks
-                event_stream_message["tool_call_chunks"] = (
-                    message_chunk.tool_call_chunks
-                )
-                yield _make_event("tool_call_chunks", event_stream_message)
-            else:
-                # AI Message - Raw message tokens
-                yield _make_event("message_chunk", event_stream_message)
+        except Exception:
+            # If we can't even send the error event, just log and return
+            logger.error(f"Failed to send error event for thread {thread_id}")
+            return
 
 
 def _make_event(event_type: str, data: dict[str, any]):
@@ -339,8 +413,29 @@ async def generate_prose(request: GenerateProseRequest):
             stream_mode="messages",
             subgraphs=True,
         )
+
+        async def prose_stream_generator():
+            import asyncio
+            try:
+                async for _, event in events:
+                    try:
+                        yield f"data: {event[0].content}\n\n"
+                    except asyncio.CancelledError:
+                        logger.info("Prose generation stream cancelled")
+                        return
+                    except Exception as e:
+                        logger.error(f"Error in prose stream event: {e}")
+                        yield f"data: Error: {str(e)}\n\n"
+                        break
+            except asyncio.CancelledError:
+                logger.info("Prose generation workflow cancelled")
+                return
+            except Exception as e:
+                logger.exception(f"Error in prose generation workflow: {e}")
+                yield f"data: Error: {str(e)}\n\n"
+
         return StreamingResponse(
-            (f"data: {event[0].content}\n\n" async for _, event in events),
+            prose_stream_generator(),
             media_type="text/event-stream",
         )
     except Exception as e:
