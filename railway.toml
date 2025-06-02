@@ -26,6 +26,18 @@ TAVILY_API_KEY = { default = "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" }
 
 # OpenRouter LLM Configuration
 OPENROUTER_API_KEY = { default = "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" }
+
+# Basic Model Configuration
 BASIC_MODEL__BASE_URL = { default = "https://openrouter.ai/api/v1" }
 BASIC_MODEL__MODEL = { default = "openrouter/google/gemini-2.5-flash-preview-05-20" }
 BASIC_MODEL__API_KEY = { default = "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" }
+
+# Reasoning Model Configuration
+REASONING_MODEL__BASE_URL = { default = "https://openrouter.ai/api/v1" }
+REASONING_MODEL__MODEL = { default = "openrouter/google/gemini-2.5-flash-preview-05-20" }
+REASONING_MODEL__API_KEY = { default = "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" }
+
+# Vision Model Configuration
+VISION_MODEL__BASE_URL = { default = "https://openrouter.ai/api/v1" }
+VISION_MODEL__MODEL = { default = "openrouter/google/gemini-2.5-flash-preview-05-20" }
+VISION_MODEL__API_KEY = { default = "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" }
