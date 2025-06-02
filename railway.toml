@@ -18,10 +18,12 @@ APP_ENV = { default = "production" }
 DEBUG = { default = "False" }
 AGENT_RECURSION_LIMIT = { default = "30" }
 
-# Search API Configuration (DuckDuckGo as fallback - no API key required)
-SEARCH_API = { default = "duckduckgo" }
+# Search API Configuration - Tavily for production
+SEARCH_API = { default = "tavily" }
+TAVILY_API_KEY = { default = "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" }
 
-# LLM Configuration (will be overridden by user-provided environment variables)
-BASIC_MODEL__BASE_URL = { default = "https://api.openai.com/v1" }
-BASIC_MODEL__MODEL = { default = "gpt-3.5-turbo" }
-BASIC_MODEL__API_KEY = { default = "placeholder" }
+# OpenRouter LLM Configuration
+OPENROUTER_API_KEY = { default = "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" }
+BASIC_MODEL__BASE_URL = { default = "https://openrouter.ai/api/v1" }
+BASIC_MODEL__MODEL = { default = "openrouter/google/gemini-2.5-flash-preview-05-20" }
+BASIC_MODEL__API_KEY = { default = "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" }
