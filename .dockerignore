@@ -44,7 +44,7 @@ npm-debug.log
 Thumbs.db
 
 # Project specific
-conf.yaml
+# conf.yaml  # Commented out - we need this file in production
 web/
 docs/
 examples/
