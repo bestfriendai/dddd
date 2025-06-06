@@ -10,7 +10,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from src.config import load_yaml_config
 from src.config.agents import LLMType
-from src.llms.mock_llm import create_mock_llm
+# Removed MockLLM - using only real OpenRouter API
 
 # Cache for LLM instances
 _llm_cache: dict[LLMType, Union[ChatOpenAI, BaseChatModel]] = {}
@@ -127,9 +127,8 @@ def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
         return llm
     except Exception as api_error:
         logger.error(f"API key validation failed: {api_error}")
-        # If API call fails, return mock LLM instead
-        logger.warning(f"Falling back to mock LLM due to API error")
-        return create_mock_llm()
+        # Raise the error instead of falling back to mock LLM
+        raise ValueError(f"OpenRouter API configuration failed: {api_error}")
 
 
 def get_llm_by_type(
@@ -202,11 +201,8 @@ def get_llm_by_type(
         except Exception as fallback_error:
             logger.error(f"Fallback also failed for {llm_type}: {fallback_error}")
 
-        # Final fallback: use mock LLM for testing
-        logger.warning(f"Using mock LLM for {llm_type} - no working API key found")
-        mock_llm = create_mock_llm()
-        _llm_cache[llm_type] = mock_llm
-        return mock_llm
+        # No more mock LLM fallback - raise the error
+        raise ValueError(f"Failed to create LLM for type {llm_type}. Please check your OpenRouter API configuration.")
 
 
 # In the future, we will use reasoning_llm and vl_llm for different purposes
