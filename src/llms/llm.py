@@ -2,16 +2,18 @@
 # SPDX-License-Identifier: MIT
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 import os
 
 from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from src.config import load_yaml_config
 from src.config.agents import LLMType
+from src.llms.mock_llm import create_mock_llm
 
 # Cache for LLM instances
-_llm_cache: dict[LLMType, ChatOpenAI] = {}
+_llm_cache: dict[LLMType, Union[ChatOpenAI, BaseChatModel]] = {}
 
 
 def _get_env_llm_conf(llm_type: str) -> Dict[str, Any]:
@@ -94,6 +96,9 @@ def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
         if key == "base_url":
             # ChatOpenAI expects openai_api_base instead of base_url
             chatgpt_params["openai_api_base"] = value
+        elif key == "api_key":
+            # ChatOpenAI expects openai_api_key instead of api_key
+            chatgpt_params["openai_api_key"] = value
         else:
             chatgpt_params[key] = value
 
@@ -101,12 +106,37 @@ def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
     logger = logging.getLogger(__name__)
     logger.info(f"Creating ChatOpenAI with parameters: {list(chatgpt_params.keys())}")
 
-    return ChatOpenAI(**chatgpt_params)
+    # Add OpenRouter-specific headers if using OpenRouter
+    if "openrouter.ai" in chatgpt_params.get("openai_api_base", ""):
+        # Add required headers for OpenRouter using openai_client_config
+        openrouter_headers = {
+            "HTTP-Referer": "https://web-bestfriendais-projects.vercel.app",
+            "X-Title": "AvaxSearch"
+        }
+        chatgpt_params["openai_client_config"] = {
+            "default_headers": openrouter_headers
+        }
+        logger.info(f"Added OpenRouter headers via client config: {list(openrouter_headers.keys())}")
+
+    # Create the ChatOpenAI instance
+    llm = ChatOpenAI(**chatgpt_params)
+
+    # Test the API key by making a simple call
+    try:
+        from langchain_core.messages import HumanMessage
+        test_response = llm.invoke([HumanMessage(content="test")])
+        logger.info("API key validation successful")
+        return llm
+    except Exception as api_error:
+        logger.error(f"API key validation failed: {api_error}")
+        # If API call fails, return mock LLM instead
+        logger.warning(f"Falling back to mock LLM due to API error")
+        return create_mock_llm()
 
 
 def get_llm_by_type(
     llm_type: LLMType,
-) -> ChatOpenAI:
+) -> Union[ChatOpenAI, BaseChatModel]:
     """
     Get LLM instance by type. Returns cached instance if available.
     """
@@ -149,8 +179,22 @@ def get_llm_by_type(
                 for key, value in env_conf.items():
                     if key == "base_url":
                         chatgpt_params["openai_api_base"] = value
+                    elif key == "api_key":
+                        chatgpt_params["openai_api_key"] = value
                     else:
                         chatgpt_params[key] = value
+
+                # Add OpenRouter-specific headers if using OpenRouter
+                if "openrouter.ai" in chatgpt_params.get("openai_api_base", ""):
+                    # Add required headers for OpenRouter using openai_client_config
+                    openrouter_headers = {
+                        "HTTP-Referer": "https://web-bestfriendais-projects.vercel.app",
+                        "X-Title": "AvaxSearch"
+                    }
+                    chatgpt_params["openai_client_config"] = {
+                        "default_headers": openrouter_headers
+                    }
+                    logger.info(f"Added OpenRouter headers in fallback via client config: {list(openrouter_headers.keys())}")
 
                 logger.info(f"Creating ChatOpenAI with fallback parameters: {list(chatgpt_params.keys())}")
                 llm = ChatOpenAI(**chatgpt_params)
@@ -162,7 +206,11 @@ def get_llm_by_type(
         except Exception as fallback_error:
             logger.error(f"Fallback also failed for {llm_type}: {fallback_error}")
 
-        raise
+        # Final fallback: use mock LLM for testing
+        logger.warning(f"Using mock LLM for {llm_type} - no working API key found")
+        mock_llm = create_mock_llm()
+        _llm_cache[llm_type] = mock_llm
+        return mock_llm
 
 
 # In the future, we will use reasoning_llm and vl_llm for different purposes

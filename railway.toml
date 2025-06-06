@@ -28,6 +28,8 @@ TAVILY_API_KEY = { default = "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" }
 # OpenRouter LLM Configuration
 OPENROUTER_API_KEY = { default = "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" }
 
+OPENAI_API_KEY = { default = "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" } # Use OpenRouter key
+OPENAI_API_BASE = { default = "https://openrouter.ai/api/v1" } # Use OpenRouter base URL
 # Basic Model Configuration
 BASIC_MODEL__BASE_URL = { default = "https://openrouter.ai/api/v1" }
 BASIC_MODEL__MODEL = { default = "openrouter/google/gemini-2.5-flash-preview-05-20" }
