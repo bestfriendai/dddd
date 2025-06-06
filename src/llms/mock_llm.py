@@ -23,9 +23,11 @@ class MockLLM(BaseChatModel):
     """
 
     model_name: str = "mock-llm"
+    bound_tools: List = []
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.bound_tools = []
         logger.info("Initialized MockLLM")
 
     @property
@@ -35,11 +37,13 @@ class MockLLM(BaseChatModel):
     def bind_tools(self, tools, **kwargs):
         """
         Mock implementation of bind_tools method.
-        Returns self to maintain compatibility with LangChain's tool binding interface.
+        Returns a new instance with tools bound for generating appropriate tool calls.
         """
         logger.info(f"MockLLM: bind_tools called with {len(tools) if tools else 0} tools")
-        # Return a copy of self to maintain the interface
-        return self
+        # Create a new instance with bound tools
+        new_instance = MockLLM()
+        new_instance.bound_tools = tools if tools else []
+        return new_instance
     
     def _generate(
         self,
@@ -49,23 +53,23 @@ class MockLLM(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Generate a mock response based on the input messages."""
-        
+
         # Get the last human message
         last_message = ""
         for message in reversed(messages):
             if isinstance(message, HumanMessage):
                 last_message = message.content
                 break
-        
+
         # Generate a simple mock response
         mock_response = self._generate_mock_response(last_message)
-        
-        # Create the response message
-        response_message = AIMessage(content=mock_response)
-        
+
+        # Create the response message with potential tool calls
+        response_message = self._create_response_with_tools(mock_response, last_message)
+
         # Create the chat generation
         generation = ChatGeneration(message=response_message)
-        
+
         return ChatResult(generations=[generation])
     
     def _generate_mock_response(self, input_text: str) -> str:
