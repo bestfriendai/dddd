@@ -21,16 +21,25 @@ class MockLLM(BaseChatModel):
     A mock LLM implementation that returns predefined responses.
     Used for testing and as a fallback when real LLM APIs are unavailable.
     """
-    
+
     model_name: str = "mock-llm"
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         logger.info("Initialized MockLLM")
-    
+
     @property
     def _llm_type(self) -> str:
         return "mock"
+
+    def bind_tools(self, tools, **kwargs):
+        """
+        Mock implementation of bind_tools method.
+        Returns self to maintain compatibility with LangChain's tool binding interface.
+        """
+        logger.info(f"MockLLM: bind_tools called with {len(tools) if tools else 0} tools")
+        # Return a copy of self to maintain the interface
+        return self
     
     def _generate(
         self,
