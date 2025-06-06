@@ -108,15 +108,13 @@ def _create_llm_use_conf(llm_type: LLMType, conf: Dict[str, Any]) -> ChatOpenAI:
 
     # Add OpenRouter-specific headers if using OpenRouter
     if "openrouter.ai" in chatgpt_params.get("openai_api_base", ""):
-        # Add required headers for OpenRouter using openai_client_config
+        # Add required headers for OpenRouter using default_headers
         openrouter_headers = {
             "HTTP-Referer": "https://web-bestfriendais-projects.vercel.app",
             "X-Title": "AvaxSearch"
         }
-        chatgpt_params["openai_client_config"] = {
-            "default_headers": openrouter_headers
-        }
-        logger.info(f"Added OpenRouter headers via client config: {list(openrouter_headers.keys())}")
+        chatgpt_params["default_headers"] = openrouter_headers
+        logger.info(f"Added OpenRouter headers via default_headers: {list(openrouter_headers.keys())}")
 
     # Create the ChatOpenAI instance
     llm = ChatOpenAI(**chatgpt_params)
@@ -186,15 +184,13 @@ def get_llm_by_type(
 
                 # Add OpenRouter-specific headers if using OpenRouter
                 if "openrouter.ai" in chatgpt_params.get("openai_api_base", ""):
-                    # Add required headers for OpenRouter using openai_client_config
+                    # Add required headers for OpenRouter using default_headers
                     openrouter_headers = {
                         "HTTP-Referer": "https://web-bestfriendais-projects.vercel.app",
                         "X-Title": "AvaxSearch"
                     }
-                    chatgpt_params["openai_client_config"] = {
-                        "default_headers": openrouter_headers
-                    }
-                    logger.info(f"Added OpenRouter headers in fallback via client config: {list(openrouter_headers.keys())}")
+                    chatgpt_params["default_headers"] = openrouter_headers
+                    logger.info(f"Added OpenRouter headers in fallback via default_headers: {list(openrouter_headers.keys())}")
 
                 logger.info(f"Creating ChatOpenAI with fallback parameters: {list(chatgpt_params.keys())}")
                 llm = ChatOpenAI(**chatgpt_params)
